@@ -6,6 +6,7 @@ OpenRelTable::OpenRelTable(){
     for(int i=0;i<MAX_OPEN;i++){
         RelCacheTable::relCache[i]=nullptr;
         AttrCacheTable::attrCache[i]=nullptr;
+        tableMetaInfo[i].free=true;
     }
     //relation catalog in relation cache table
     RecBuffer relCatBlock(RELCAT_BLOCK);
@@ -128,25 +129,32 @@ OpenRelTable::OpenRelTable(){
     }
 
     AttrCacheTable::attrCache[STUDENTS_RELID] = head;
+    tableMetaInfo[RELCAT_RELID].free = false;
+  strcpy(tableMetaInfo[RELCAT_RELID].relName, RELCAT_RELNAME);
+
+  tableMetaInfo[ATTRCAT_RELID].free = false;
+  strcpy(tableMetaInfo[ATTRCAT_RELID].relName, ATTRCAT_RELNAME);
 
 }
 
 OpenRelTable::~OpenRelTable() {
     
-    for(int i = 0; i < MAX_OPEN; i++){
-        if(RelCacheTable::relCache[i] != nullptr){
-            free(RelCacheTable::relCache[i]);
-            RelCacheTable::relCache[i] = nullptr;
+    for(int i = 2; i < MAX_OPEN; i++){
+        if(!tableMetaInfo[i].free){
+            OpenRelTable::closeRel(i);
         }
     }
-    for(int i = 0; i < MAX_OPEN; i++){
-        AttrCacheEntry* current = AttrCacheTable::attrCache[i];
+    free(RelCacheTable::relCache[RELCAT_RELID]);
+    free(RelCacheTable::relCache[ATTRCAT_RELID]);
+
+    for(int relId = 0; relId <= 1; relId++){
+        AttrCacheEntry* current = AttrCacheTable::attrCache[relId];
         while(current != nullptr){
             AttrCacheEntry* next = current->next;
             free(current);
             current = next;
         }
-        AttrCacheTable::attrCache[i] = nullptr;
+        AttrCacheTable::attrCache[relId] = nullptr;
     }
 }
 int OpenRelTable::getRelId(char relName[ATTR_SIZE]) {
