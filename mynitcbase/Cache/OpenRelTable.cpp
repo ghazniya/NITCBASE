@@ -158,17 +158,99 @@ OpenRelTable::~OpenRelTable() {
     }
 }
 int OpenRelTable::getRelId(char relName[ATTR_SIZE]) {
-  if (strcmp(relName, RELCAT_RELNAME) == 0) {
-    return RELCAT_RELID;
-  }
-
-  if (strcmp(relName, ATTRCAT_RELNAME) == 0) {
-    return ATTRCAT_RELID;
-  }
-
-  if (strcmp(relName, "Students") == 0) {
-    return 2;
-  }
-
+    for(int relid=0;relid<MAX_OPEN;relid++){
+        if(strcmp(tableMetaInfo[relid].relName,relName)==0){
+            return relid;
+        }
+    }
   return E_RELNOTOPEN;
+}
+int OpenRelTable::getFreeOpenRelTableEntry(){
+    for(int i=0;i<MAX_OPEN;i++){
+        if(tableMetaInfo[i].free){
+            return i;
+        }
+    }
+    return E_CACHEFULL;
+}
+
+int OpenRelTable::openRel(char relName[ATTR_SIZE]){
+    int existrelid=OpenRelTable::getRelId(relName);
+    if(existrelid>=0){
+        return existrelid;
+    }
+    int relid=OpenRelTable::getFreeOpenRelTableEntry();
+    if(relid<0){
+        return E_CACHEFULL;
+    }
+    Attribute relNameAttr;
+    strcpy(relNameAttr.sVal,relName);
+    RelCacheTable::resetSearchIndex(RELCAT_RELID);
+    RecId relcatRecId=BlockAccess::linearSearch(RELCAT_RELID,(char*)RELCAT_ATTR_RELNAME,relNameAttr,EQ);
+
+    if(relcatRecId.block==-1 && relcatRecId.slot==-1){
+        return E_RELNOTEXIST;
+    }
+    RecBuffer relCatBlock(relcatRecId.block);
+    Attribute relCatRecord[RELCAT_NO_ATTRS];
+    relCatBlock.getRecord(relCatRecord,relcatRecId.slot);
+
+    struct RelCacheEntry relCacheEntry;
+    RelCacheTable::recordToRelCatEntry(relCatRecord,&relCacheEntry.relCatEntry);
+    relCacheEntry.recId=relcatRecId;
+    relCacheEntry.dirty=false;
+
+    RelCacheTable::relCache[relid]=(struct RelCacheEntry *)malloc(sizeof(RelCacheEntry));
+    *(RelCacheTable::relCache[relid])=relCacheEntry;
+
+    AttrCacheEntry *listHead=nullptr;
+    AttrCacheEntry *prev=nullptr;
+
+    RelCacheTable::resetSearchIndex(ATTRCAT_RELID);
+    while(true){
+        RecId attrcatRecId=BlockAccess::linearSearch(ATTRCAT_RELID,(char *)ATTRCAT_ATTR_RELNAME,relNameAttr,EQ);
+        if(attrcatRecId.block==-1 && attrcatRecId.slot==-1){
+            break;
+        }
+        RecBuffer attrCatBlock(attrcatRecId.block);
+        Attribute attrCatRecord[ATTRCAT_NO_ATTRS];
+        attrCatBlock.getRecord(attrCatRecord,attrcatRecId.slot);
+        struct AttrCacheEntry *entry=(struct AttrCacheEntry *)malloc(sizeof(AttrCacheEntry));
+        AttrCacheTable::recordToAttrCatEntry(attrCatRecord,&entry->attrCatEntry);
+        entry->recId=attrcatRecId;
+        entry->dirty=false;
+        entry->next=nullptr;
+        if(listHead==nullptr)listHead=entry;
+        else prev->next=entry;
+        prev=entry;
+    }
+    AttrCacheTable::attrCache[relid]=listHead;
+    tableMetaInfo[relid].free=false;
+    strcpy(tableMetaInfo[relid].relName,relName);
+    return relid;
+}
+int OpenRelTable::closeRel(int relId){
+    if(relId==RELCAT_RELID && relId==ATTRCAT_RELID){
+        return E_NOTPERMITTED;
+    }
+
+    if(relId<0 && relId>MAX_OPEN){
+        return E_OUTOFBOUND;
+    }
+    if(tableMetaInfo[relId].free){
+        return E_RELNOTOPEN;
+    }
+
+    free(RelCacheTable::relCache[relId]);
+    AttrCacheEntry *current=AttrCacheTable::attrCache[relId];
+    while(current!=nullptr){
+        AttrCacheEntry *next=current->next;
+        free(current);
+        current=next;
+    }
+    tableMetaInfo[relId].free=true;
+    RelCacheTable::relCache[relId]=nullptr;
+    AttrCacheTable::attrCache[relId]=nullptr;
+
+    return SUCCESS;
 }
