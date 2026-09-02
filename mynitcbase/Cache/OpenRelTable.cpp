@@ -1,7 +1,8 @@
 #include "OpenRelTable.h"
-#include<cstdlib>
+#include <cstdlib>
 #include <cstring>
-
+#include <cstdio>
+OpenRelTableMetaInfo OpenRelTable::tableMetaInfo[MAX_OPEN];
 OpenRelTable::OpenRelTable(){
     for(int i=0;i<MAX_OPEN;i++){
         RelCacheTable::relCache[i]=nullptr;
@@ -85,50 +86,6 @@ OpenRelTable::OpenRelTable(){
     
     AttrCacheTable::attrCache[ATTRCAT_RELID] = head;  
 
-    //student relation
-    const int STUDENTS_RELID = 2;
-
-    Attribute studentsRelCatRecord[RELCAT_NO_ATTRS];
-    relCatBlock.getRecord(studentsRelCatRecord, 2);
-
-    RelCacheEntry studentsRelCacheEntry;
-    RelCacheTable::recordToRelCatEntry(studentsRelCatRecord,&studentsRelCacheEntry.relCatEntry);
-    studentsRelCacheEntry.recId.block = RELCAT_BLOCK;
-    studentsRelCacheEntry.recId.slot  = 2;
-
-    RelCacheTable::relCache[STUDENTS_RELID] =(RelCacheEntry *)malloc(sizeof(RelCacheEntry));
-    *(RelCacheTable::relCache[STUDENTS_RELID]) = studentsRelCacheEntry;
-
-    // ---------- Attribute Cache entries for Students ----------
-    // RELATIONCAT  -> slots 0-5
-    // ATTRIBUTECAT -> slots 6-11
-    // Students     -> slots 12-15
-
-    head = nullptr;
-    prev = nullptr;
-
-    for (int i = 12; i < 16; i++) {
-        Attribute studentsAttrRecord[ATTRCAT_NO_ATTRS];
-        attrCatBlock.getRecord(studentsAttrRecord, i);
-
-        struct AttrCatEntry attrCatEntry;
-        AttrCacheTable::recordToAttrCatEntry(studentsAttrRecord, &attrCatEntry);
-
-        struct AttrCacheEntry *attrCacheEntry =(struct AttrCacheEntry *)malloc(sizeof(AttrCacheEntry));
-        attrCacheEntry->attrCatEntry  = attrCatEntry;
-        attrCacheEntry->recId.block   = ATTRCAT_BLOCK;
-        attrCacheEntry->recId.slot    = i;
-        attrCacheEntry->next          = nullptr;
-
-        if (i == 12) {
-            head = attrCacheEntry;
-        } else {
-            prev->next = attrCacheEntry;
-        }
-        prev = attrCacheEntry;
-    }
-
-    AttrCacheTable::attrCache[STUDENTS_RELID] = head;
     tableMetaInfo[RELCAT_RELID].free = false;
   strcpy(tableMetaInfo[RELCAT_RELID].relName, RELCAT_RELNAME);
 
@@ -158,8 +115,11 @@ OpenRelTable::~OpenRelTable() {
     }
 }
 int OpenRelTable::getRelId(char relName[ATTR_SIZE]) {
+    //printf("DEBUG getRelId: looking for '%s'\n", relName);
     for(int relid=0;relid<MAX_OPEN;relid++){
-        if(strcmp(tableMetaInfo[relid].relName,relName)==0){
+        //printf("  slot %d: free=%d name='%s'\n",
+               //relid, tableMetaInfo[relid].free, tableMetaInfo[relid].relName);
+        if(strcmp(tableMetaInfo[relid].relName,relName)==0 && tableMetaInfo[relid].free==false){
             return relid;
         }
     }
@@ -227,14 +187,16 @@ int OpenRelTable::openRel(char relName[ATTR_SIZE]){
     AttrCacheTable::attrCache[relid]=listHead;
     tableMetaInfo[relid].free=false;
     strcpy(tableMetaInfo[relid].relName,relName);
+     //printf("DEBUG openRel: relid=%d stored='%s' free=%d\n",
+           //relid, tableMetaInfo[relid].relName, tableMetaInfo[relid].free);
     return relid;
 }
 int OpenRelTable::closeRel(int relId){
-    if(relId==RELCAT_RELID && relId==ATTRCAT_RELID){
+    if(relId==RELCAT_RELID || relId==ATTRCAT_RELID){
         return E_NOTPERMITTED;
     }
 
-    if(relId<0 && relId>MAX_OPEN){
+    if(relId<0 || relId>=MAX_OPEN){
         return E_OUTOFBOUND;
     }
     if(tableMetaInfo[relId].free){
