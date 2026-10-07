@@ -134,3 +134,173 @@ int BlockAccess::renameAttribute(char relName[ATTR_SIZE],char oldName[ATTR_SIZE]
 
     return SUCCESS;
 }
+
+int BlockAccess::insert(int relId,Attribute *record){
+
+    RelCatEntry relCatEntry;
+    int ret=RelCacheTable::getRelCatEntry(relId,&relCatEntry);
+    if(ret!=SUCCESS){
+        return ret;
+    }
+
+    int blockNum=relCatEntry.firstBlk;
+    RecId recid={-1,-1};
+    int numOfSlots=relCatEntry.numSlotsPerBlk;
+    int numOfAttributes=relCatEntry.numAttrs;
+    int prevblock=-1;
+
+    while(blockNum!=-1){
+        RecBuffer recBuffer(blockNum);
+        HeadInfo header;
+        ret=recBuffer.getHeader(&header);
+        if(ret!=SUCCESS){
+            return ret;
+        }
+
+        unsigned char slotMap[numOfSlots];
+        ret=recBuffer.getSlotMap(slotMap);
+        if(ret!=SUCCESS){
+            return ret;
+        }
+
+        for(int i=0;i<numOfSlots;i++){
+            if(slotMap[i]==SLOT_UNOCCUPIED){
+                recid.block=blockNum;
+                recid.slot=i;
+                break;
+            }
+        }
+        if(recid.block!=-1)
+            break;
+        prevblock=blockNum;
+        blockNum=header.rblock;
+    }
+    if(recid.block==-1){
+        if(relId==RELCAT_RELID){
+            return E_MAXRELATIONS;
+        }
+
+        RecBuffer newRecBuffer;
+        int newBlockNum=newRecBuffer.getBlockNum();
+        if(newBlockNum==E_DISKFULL){
+            return E_DISKFULL;
+        }
+
+        recid.block=newBlockNum;
+        recid.slot=0;
+
+         HeadInfo header;
+
+        header.blockType = REC;
+        header.pblock = -1;
+
+        if (prevblock == -1)
+            header.lblock = -1;
+        else
+            header.lblock = prevblock;
+
+        header.rblock = -1;
+        header.numEntries = 0;
+        header.numSlots = numOfSlots;
+        header.numAttrs = numOfAttributes;
+
+        ret = newRecBuffer.setHeader(&header);
+
+        if (ret != SUCCESS)
+            return ret;
+        
+        //initialize slot map
+        unsigned char slotMap[numOfSlots];
+
+        for (int i = 0; i < numOfSlots; i++)
+            slotMap[i] = SLOT_UNOCCUPIED;
+
+        ret = newRecBuffer.setSlotMap(slotMap);
+
+        if (ret != SUCCESS)
+            return ret;
+
+        //link new block to the previous last block
+        if (prevblock != -1) {
+
+            RecBuffer prevBuffer(prevblock);
+
+            HeadInfo prevHeader;
+
+            ret = prevBuffer.getHeader(&prevHeader);
+
+            if (ret != SUCCESS)
+                return ret;
+
+            prevHeader.rblock = recid.block;
+
+            ret = prevBuffer.setHeader(&prevHeader);
+
+            if (ret != SUCCESS)
+                return ret;
+        }else {
+
+            // This is the first block of the relation
+            relCatEntry.firstBlk = recid.block;
+
+            ret = RelCacheTable::setRelCatEntry(relId, &relCatEntry);
+
+            if (ret != SUCCESS)
+                return ret;
+        }
+        relCatEntry.lastBlk = recid.block;
+
+        ret = RelCacheTable::setRelCatEntry(relId, &relCatEntry);
+
+        if (ret != SUCCESS)
+            return ret;
+    }
+    //nsert record into the selected slot
+    RecBuffer recBuffer(recid.block);
+
+    ret = recBuffer.setRecord(record, recid.slot);
+
+    if (ret != SUCCESS)
+        return ret;
+    
+    //Mark slot as occupied
+    unsigned char slotMap[numOfSlots];
+
+    ret = recBuffer.getSlotMap(slotMap);
+
+    if (ret != SUCCESS)
+        return ret;
+
+    slotMap[recid.slot] = SLOT_OCCUPIED;
+
+    ret = recBuffer.setSlotMap(slotMap);
+
+    if (ret != SUCCESS)
+        return ret;
+    
+    //increment noofentries in block
+    HeadInfo header;
+
+    ret = recBuffer.getHeader(&header);
+
+    if (ret != SUCCESS)
+        return ret;
+
+    header.numEntries++;
+
+    ret = recBuffer.setHeader(&header);
+
+    if (ret != SUCCESS)
+        return ret;
+    
+    //increment noofrecords in relation
+    relCatEntry.numRecs++;
+
+    ret = RelCacheTable::setRelCatEntry(relId, &relCatEntry);
+
+    if (ret != SUCCESS)
+        return ret;
+
+    return SUCCESS;
+
+}

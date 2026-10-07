@@ -117,8 +117,6 @@ OpenRelTable::~OpenRelTable() {
 int OpenRelTable::getRelId(char relName[ATTR_SIZE]) {
     //printf("DEBUG getRelId: looking for '%s'\n", relName);
     for(int relid=0;relid<MAX_OPEN;relid++){
-        //printf("  slot %d: free=%d name='%s'\n",
-               //relid, tableMetaInfo[relid].free, tableMetaInfo[relid].relName);
         if(strcmp(tableMetaInfo[relid].relName,relName)==0 && tableMetaInfo[relid].free==false){
             return relid;
         }
@@ -203,6 +201,14 @@ int OpenRelTable::closeRel(int relId){
         return E_RELNOTOPEN;
     }
 
+    if(RelCacheTable::relCache[relId]->dirty==true){
+        union Attribute record[RELCAT_NO_ATTRS];
+        RelCacheTable::relCatEntryToRecord(&RelCacheTable::relCache[relId]->relCatEntry,record);
+        RecId recId=RelCacheTable::relCache[relId]->recId;
+        RecBuffer RelCatEntry(recId.block);
+        RelCatEntry.setRecord(record,recId.slot);
+        
+    }
     free(RelCacheTable::relCache[relId]);
     AttrCacheEntry *current=AttrCacheTable::attrCache[relId];
     while(current!=nullptr){
@@ -210,9 +216,8 @@ int OpenRelTable::closeRel(int relId){
         free(current);
         current=next;
     }
-    tableMetaInfo[relId].free=true;
-    RelCacheTable::relCache[relId]=nullptr;
     AttrCacheTable::attrCache[relId]=nullptr;
+    tableMetaInfo[relId].free=true;
 
     return SUCCESS;
 }
