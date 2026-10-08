@@ -6,7 +6,15 @@ BlockBuffer::BlockBuffer(int blockNum) {
     this->blockNum = blockNum;
 }
 BlockBuffer::BlockBuffer(char blockType){
-    blockNum=getFreeBlock(blockType);
+    // map the block-type character to its BlockType enum value so the block
+    // header and allocation map store REC/IND_INTERNAL/IND_LEAF, not the raw
+    // ASCII code of the character.
+    int type;
+    if(blockType=='R')      type=REC;
+    else if(blockType=='I') type=IND_INTERNAL;
+    else if(blockType=='L') type=IND_LEAF;
+    else                    type=UNUSED_BLK;
+    blockNum=getFreeBlock(type);
 }
 
 RecBuffer::RecBuffer(int blockNum) : BlockBuffer::BlockBuffer(blockNum) {}
@@ -194,8 +202,12 @@ int BlockBuffer::getFreeBlock(int blockType){
         return E_DISKFULL;
     }
     blockNum=freeblock;
+    // getFreeBuffer returns the allocated buffer index (>=0), not SUCCESS;
+    // only a negative value (E_OUTOFBOUND) is an error. Treating the buffer
+    // index as an error here used to make getFreeBlock return that index as
+    // the block number, corrupting firstBlk (e.g. pointing at a BMAP block).
     int ret=StaticBuffer::getFreeBuffer(blockNum);
-    if(ret!=SUCCESS){
+    if(ret<0){
         return ret;
     }
 
@@ -240,4 +252,18 @@ int RecBuffer::setSlotMap(unsigned char *slotMap){
 
     return SUCCESS;
 
+}
+
+void BlockBuffer::releaseBlock(){
+    if(this->blockNum==INVALID_BLOCKNUM || this->blockNum<0 || this->blockNum>=DISK_BLOCKS || StaticBuffer::blockAllocMap[this->blockNum]==UNUSED_BLK){
+        return;
+    }
+    int bufferNum=StaticBuffer::getBufferNum(this->blockNum);
+
+    if(bufferNum!=E_BLOCKNOTINBUFFER && bufferNum >=0 && bufferNum < BUFFER_CAPACITY){
+        StaticBuffer::metainfo[bufferNum].free=true;
+    }
+
+    StaticBuffer::blockAllocMap[this->blockNum]=UNUSED_BLK;
+    this->blockNum=INVALID_BLOCKNUM;
 }

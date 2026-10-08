@@ -18,6 +18,7 @@ OpenRelTable::OpenRelTable(){
     RelCacheTable::recordToRelCatEntry(relCatRecord,&relCacheEntry.relCatEntry);
         relCacheEntry.recId.block=RELCAT_BLOCK;
         relCacheEntry.recId.slot=RELCAT_SLOTNUM_FOR_RELCAT;
+        relCacheEntry.dirty=false;
 
         RelCacheTable::relCache[RELCAT_RELID]=(struct RelCacheEntry*)malloc(sizeof(RelCacheEntry));
         *(RelCacheTable::relCache[RELCAT_RELID])=relCacheEntry;
@@ -31,6 +32,7 @@ OpenRelTable::OpenRelTable(){
     RelCacheTable::recordToRelCatEntry(attrRelCatRecord,&attrRelCacheEntry.relCatEntry);
         attrRelCacheEntry.recId.block=ATTRCAT_BLOCK;
         attrRelCacheEntry.recId.slot=RELCAT_SLOTNUM_FOR_ATTRCAT;
+        attrRelCacheEntry.dirty=false;
     RelCacheTable::relCache[ATTRCAT_RELID]=(struct RelCacheEntry*)malloc(sizeof(RelCacheEntry));
     *(RelCacheTable::relCache[ATTRCAT_RELID])=attrRelCacheEntry;
 
@@ -101,8 +103,27 @@ OpenRelTable::~OpenRelTable() {
             OpenRelTable::closeRel(i);
         }
     }
-    free(RelCacheTable::relCache[RELCAT_RELID]);
+
+    if(RelCacheTable::relCache[ATTRCAT_RELID]->dirty){
+        Attribute record[RELCAT_NO_ATTRS];
+        RelCacheTable::relCatEntryToRecord(&(RelCacheTable::relCache[ATTRCAT_RELID]->relCatEntry),record);
+        RecId recId=RelCacheTable::relCache[ATTRCAT_RELID]->recId;
+        RecBuffer relCatBlock(recId.block);
+        relCatBlock.setRecord(record,recId.slot);
+    }
     free(RelCacheTable::relCache[ATTRCAT_RELID]);
+    RelCacheTable::relCache[ATTRCAT_RELID]=nullptr;
+
+    if(RelCacheTable::relCache[RELCAT_RELID]->dirty){
+        Attribute record[RELCAT_NO_ATTRS];
+        RelCacheTable::relCatEntryToRecord(&(RelCacheTable::relCache[RELCAT_RELID]->relCatEntry),record);
+
+        RecId recId=RelCacheTable::relCache[RELCAT_RELID]->recId;
+        RecBuffer relCatBlock(recId.block);
+        relCatBlock.setRecord(record,recId.slot);
+    }
+    free(RelCacheTable::relCache[RELCAT_RELID]);
+    RelCacheTable::relCache[RELCAT_RELID]=nullptr;
 
     for(int relId = 0; relId <= 1; relId++){
         AttrCacheEntry* current = AttrCacheTable::attrCache[relId];

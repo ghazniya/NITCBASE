@@ -304,3 +304,144 @@ int BlockAccess::insert(int relId,Attribute *record){
     return SUCCESS;
 
 }
+
+int BlockAccess::search(int relId, Attribute *record,char attrName[ATTR_SIZE],Attribute attrVal,int op){
+    RecId recId;
+    recId=BlockAccess::linearSearch(relId,attrName,attrVal,op);
+    if(recId.block==-1 && recId.slot==-1){
+        return E_NOTFOUND;
+    }
+    RecBuffer recBuffer(recId.block);
+    int ret=recBuffer.getRecord(record,recId.slot);
+    if(ret!=SUCCESS){
+        return ret;
+    }
+    return SUCCESS;
+}
+
+int BlockAccess::deleteRelation(char relName[ATTR_SIZE]){
+    if(strcmp(relName,RELCAT_RELNAME)==0 || strcmp(relName,ATTRCAT_RELNAME)==0){
+        return E_NOTPERMITTED;
+    }
+
+    RelCacheTable::resetSearchIndex(RELCAT_RELID);
+    Attribute relNameAttr;
+    strcpy(relNameAttr.sVal,relName);
+
+    char relcatAttrRelName[ATTR_SIZE]=RELCAT_ATTR_RELNAME;
+    RecId relCatRecId=linearSearch(RELCAT_RELID,relcatAttrRelName,relNameAttr,EQ);
+
+    if(relCatRecId.block==-1 && relCatRecId.slot==-1){
+        return E_RELNOTEXIST;
+    }
+
+    Attribute relcatEntryRecord[RELCAT_NO_ATTRS];
+    RecBuffer relCatBuffer(relCatRecId.block);
+    int ret=relCatBuffer.getRecord(relcatEntryRecord,relCatRecId.slot);
+    if(ret!=SUCCESS) return ret;
+
+    int firstBlock=(int)relcatEntryRecord[RELCAT_FIRST_BLOCK_INDEX].nVal;
+    int numAttrs=(int)relcatEntryRecord[RELCAT_NO_ATTRIBUTES_INDEX].nVal;
+    (void)numAttrs;
+
+    //delete all the record blocks of relation
+    int currentBlock=firstBlock;
+    while(currentBlock!=-1){
+        RecBuffer currentBuffer(currentBlock);
+        HeadInfo header;
+        ret=currentBuffer.getHeader(&header);
+        if(ret!=SUCCESS) return ret;
+        //get the next block
+        currentBlock=header.rblock;
+        currentBuffer.releaseBlock();
+    }
+    //deleting attribute catalog entries corresponding the relation
+    RelCacheTable::resetSearchIndex(ATTRCAT_RELID);
+    char attrcatAttrRelName[ATTR_SIZE]=ATTRCAT_ATTR_RELNAME;
+    int numberofAttributesDeleted=0;
+
+    while(true){
+        RecId attrCatRecId;
+        attrCatRecId=linearSearch(ATTRCAT_RELID,attrcatAttrRelName,relNameAttr,EQ);
+        if(attrCatRecId.block==-1 && attrCatRecId.slot==-1){
+            break;
+        }
+        numberofAttributesDeleted++;
+        RecBuffer attrCatBuffer(attrCatRecId.block);
+        HeadInfo header;
+        ret=attrCatBuffer.getHeader(&header);
+        if(ret!=SUCCESS) return ret;
+
+        Attribute attrCatRecord[ATTRCAT_NO_ATTRS];
+        ret=attrCatBuffer.getRecord(attrCatRecord,attrCatRecId.slot);
+        if(ret!=SUCCESS) return ret;
+
+        unsigned char slotmap[header.numSlots];
+        ret=attrCatBuffer.getSlotMap(slotmap);
+        if(ret!=SUCCESS) return ret;
+        slotmap[attrCatRecId.slot]=SLOT_UNOCCUPIED;
+        ret=attrCatBuffer.setSlotMap(slotmap);
+        if(ret!=SUCCESS) return ret;
+        header.numEntries--;
+        ret=attrCatBuffer.setHeader(&header);
+        if(ret!=SUCCESS) return ret;
+
+        if(header.numEntries==0){
+            RecBuffer leftBuffer(header.lblock);
+            HeadInfo leftHeader;
+            ret=leftBuffer.getHeader(&leftHeader);
+            if(ret!=SUCCESS) return ret;
+            leftHeader.rblock=header.rblock;
+            ret=leftBuffer.setHeader(&leftHeader);
+            if(ret!=SUCCESS) return ret;
+
+            if(header.rblock!=-1){
+                RecBuffer rightBuffer(header.rblock);
+                HeadInfo rightHeader;
+                ret=rightBuffer.getHeader(&rightHeader);
+                if(ret!=SUCCESS) return ret;
+                rightHeader.lblock=header.lblock;
+                ret=rightBuffer.setHeader(&rightHeader);
+                if(ret!=SUCCESS) return ret;
+            } else {
+                RelCatEntry attrCatRelEntry;
+                RelCacheTable::getRelCatEntry(ATTRCAT_RELID,&attrCatRelEntry);
+                attrCatRelEntry.lastBlk=header.lblock;
+                RelCacheTable::setRelCatEntry(ATTRCAT_RELID,&attrCatRelEntry);
+            }
+            attrCatBuffer.releaseBlock();
+            RelCacheTable::resetSearchIndex(ATTRCAT_RELID);
+        }
+    }
+     //delete the entry corresponding to the relation from relation catalog
+    HeadInfo relCatHeader;
+    ret=relCatBuffer.getHeader(&relCatHeader);
+    if(ret!=SUCCESS) return ret;
+
+    relCatHeader.numEntries--;
+    ret = relCatBuffer.setHeader(&relCatHeader);
+    if (ret != SUCCESS) return ret;
+
+    // mark the slot as free in the relation catalog slot map
+    unsigned char relCatSlotMap[relCatHeader.numSlots];
+    ret = relCatBuffer.getSlotMap(relCatSlotMap);
+    if (ret != SUCCESS) return ret;
+    relCatSlotMap[relCatRecId.slot] = SLOT_UNOCCUPIED;
+    ret = relCatBuffer.setSlotMap(relCatSlotMap);
+    if (ret != SUCCESS) return ret;
+
+    /*** Updating the Relation Cache Table ***/
+    // relation catalog: number of records decreases by 1
+    RelCatEntry relCatEntry;
+    RelCacheTable::getRelCatEntry(RELCAT_RELID, &relCatEntry);
+    relCatEntry.numRecs--;
+    RelCacheTable::setRelCatEntry(RELCAT_RELID, &relCatEntry);
+
+    // attribute catalog: number of records decreases by numberOfAttributesDeleted
+    RelCatEntry attrCatEntry;
+    RelCacheTable::getRelCatEntry(ATTRCAT_RELID, &attrCatEntry);
+    attrCatEntry.numRecs -= numberofAttributesDeleted;
+    RelCacheTable::setRelCatEntry(ATTRCAT_RELID, &attrCatEntry);
+
+    return SUCCESS;
+}
