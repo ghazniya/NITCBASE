@@ -1,10 +1,5 @@
-create table b(id NUM);
-create table c(id NUM);
-create table d(id NUM);
-create table e(id NUM);
-create table f(id NUM);
-create table g(id NUM);
-create table h(id NUM);
-create table i(id NUM);
-create table j(id NUM);
-create table k(id NUM);
+create table Students(RollNumber STR,Name STR,Marks NUM,Batch STR);
+create table Events(id NUM,title STR,location STR);
+create table Locations(name STR,capacity NUM);
+create table Participants(regNo NUM,event STR);
+create table Books(name STR,author STR,price NUM);

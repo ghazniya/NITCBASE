@@ -1,2 +1,5 @@
-drop table Locations;
-drop table Participants;
+drop table Sales;
+drop table Products;
+drop table Bills;
+drop table Stores;
+drop table null;

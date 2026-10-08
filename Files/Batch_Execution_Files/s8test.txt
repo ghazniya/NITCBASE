@@ -1,0 +1,24 @@
+CREATE TABLE Products(id NUM, name STR, cost NUM, stock NUM, color STR)
+CREATE TABLE Sales(id NUM, storeId NUM, productId NUM, purchaser STR, discount NUM, billId NUM)
+CREATE TABLE Bills(id NUM, totalCost NUM, tax NUM, tip NUM)
+CREATE TABLE Stores(id NUM, name STR, owner STR, location STR, startDate STR)
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Products
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Bills
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Sales
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Stores
+SELECT * FROM ATTRIBUTECAT INTO null WHERE RelName=Products
+SELECT * FROM ATTRIBUTECAT INTO null WHERE RelName=Sales
+SELECT * FROM ATTRIBUTECAT INTO null WHERE RelName=Bills
+SELECT * FROM ATTRIBUTECAT INTO null WHERE RelName=Stores
+OPEN TABLE Products
+OPEN TABLE Stores
+INSERT INTO Products VALUES FROM s8products.csv
+INSERT INTO Stores VALUES FROM s8stores.csv
+SELECT * FROM Stores INTO null WHERE owner=Gomez
+CLOSE TABLE Products
+DROP TABLE Products
+DROP TABLE Sales
+DROP TABLE Bills
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Products
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Bills
+SELECT * FROM RELATIONCAT INTO null WHERE RelName=Sales
