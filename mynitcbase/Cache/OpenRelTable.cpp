@@ -206,8 +206,6 @@ int OpenRelTable::openRel(char relName[ATTR_SIZE]){
     AttrCacheTable::attrCache[relid]=listHead;
     tableMetaInfo[relid].free=false;
     strcpy(tableMetaInfo[relid].relName,relName);
-     //printf("DEBUG openRel: relid=%d stored='%s' free=%d\n",
-           //relid, tableMetaInfo[relid].relName, tableMetaInfo[relid].free);
     return relid;
 }
 int OpenRelTable::closeRel(int relId){
@@ -231,14 +229,22 @@ int OpenRelTable::closeRel(int relId){
         
     }
     free(RelCacheTable::relCache[relId]);
-    AttrCacheEntry *current=AttrCacheTable::attrCache[relId];
-    while(current!=nullptr){
-        AttrCacheEntry *next=current->next;
-        free(current);
-        current=next;
+
+    AttrCacheEntry *entry=AttrCacheTable::attrCache[relId];
+    while(entry!=nullptr){
+        if(entry->dirty){
+            Attribute record[ATTRCAT_NO_ATTRS];
+            AttrCacheTable::attrCatEntryToRecord(&(entry->attrCatEntry),record);
+            RecBuffer attrCatBlock(entry->recId.block);
+            attrCatBlock.setRecord(record,entry->recId.slot);
+        }
+        AttrCacheEntry *next=entry->next;
+        free(entry);
+        entry=next;
     }
     AttrCacheTable::attrCache[relId]=nullptr;
     tableMetaInfo[relId].free=true;
+    strcpy(tableMetaInfo[relId].relName,"");
 
     return SUCCESS;
 }

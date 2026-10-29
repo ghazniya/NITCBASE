@@ -1,6 +1,7 @@
 #include "BlockAccess.h"
 
 #include <cstring>
+int totalnoofcomparison=0;
 
 RecId BlockAccess::linearSearch(int relId,char attrName[ATTR_SIZE],union Attribute attrVal,int op){
     RecId prevRecId;
@@ -35,6 +36,7 @@ RecId BlockAccess::linearSearch(int relId,char attrName[ATTR_SIZE],union Attribu
         AttrCatEntry attrCatEntry;
         AttrCacheTable::getAttrCatEntry(relId,attrName,&attrCatEntry);
         int offset=attrCatEntry.offset;
+        totalnoofcomparison++;
         int cmpVal=compareAttrs(record[offset],attrVal,attrCatEntry.attrType);
             if(
                 (op==NE && cmpVal!=0)||
@@ -301,22 +303,28 @@ int BlockAccess::insert(int relId,Attribute *record){
     if (ret != SUCCESS)
         return ret;
 
-    return SUCCESS;
+    /* B+ Tree Insertions */
+    int flag = SUCCESS;
 
-}
+    for (int attrOffset = 0; attrOffset < numOfAttributes; attrOffset++) {
+        AttrCatEntry attrCatEntry;
+        AttrCacheTable::getAttrCatEntry(relId, attrOffset, &attrCatEntry);
 
-int BlockAccess::search(int relId, Attribute *record,char attrName[ATTR_SIZE],Attribute attrVal,int op){
-    RecId recId;
-    recId=BlockAccess::linearSearch(relId,attrName,attrVal,op);
-    if(recId.block==-1 && recId.slot==-1){
-        return E_NOTFOUND;
+        int rootBlock = attrCatEntry.rootBlock;
+
+        // index exists on this attribute
+        if (rootBlock != -1) {
+            int retVal = BPlusTree::bPlusInsert(relId, attrCatEntry.attrName,
+                                                record[attrOffset], recid);
+
+            if (retVal == E_DISKFULL) {
+                // the index on this attribute has been destroyed
+                flag = E_INDEX_BLOCKS_RELEASED;
+            }
+        }
     }
-    RecBuffer recBuffer(recId.block);
-    int ret=recBuffer.getRecord(record,recId.slot);
-    if(ret!=SUCCESS){
-        return ret;
-    }
-    return SUCCESS;
+
+    return flag;
 }
 
 int BlockAccess::deleteRelation(char relName[ATTR_SIZE]){
@@ -341,8 +349,6 @@ int BlockAccess::deleteRelation(char relName[ATTR_SIZE]){
     if(ret!=SUCCESS) return ret;
 
     int firstBlock=(int)relcatEntryRecord[RELCAT_FIRST_BLOCK_INDEX].nVal;
-    int numAttrs=(int)relcatEntryRecord[RELCAT_NO_ATTRIBUTES_INDEX].nVal;
-    (void)numAttrs;
 
     //delete all the record blocks of relation
     int currentBlock=firstBlock;
@@ -375,6 +381,8 @@ int BlockAccess::deleteRelation(char relName[ATTR_SIZE]){
         Attribute attrCatRecord[ATTRCAT_NO_ATTRS];
         ret=attrCatBuffer.getRecord(attrCatRecord,attrCatRecId.slot);
         if(ret!=SUCCESS) return ret;
+
+        int rootBlock = (int)attrCatRecord[ATTRCAT_ROOT_BLOCK_INDEX].nVal;
 
         unsigned char slotmap[header.numSlots];
         ret=attrCatBuffer.getSlotMap(slotmap);
@@ -412,8 +420,12 @@ int BlockAccess::deleteRelation(char relName[ATTR_SIZE]){
             attrCatBuffer.releaseBlock();
             RelCacheTable::resetSearchIndex(ATTRCAT_RELID);
         }
+        if (rootBlock != -1) {
+            BPlusTree::bPlusDestroy(rootBlock);
+        }
     }
-     //delete the entry corresponding to the relation from relation catalog
+        
+    //delete the entry corresponding to the relation from relation catalog
     HeadInfo relCatHeader;
     ret=relCatBuffer.getHeader(&relCatHeader);
     if(ret!=SUCCESS) return ret;
@@ -474,7 +486,7 @@ int BlockAccess::project(int relId,Attribute *record){
         recbuffer.getSlotMap(slotMap);
 
         if(slot>=header.numSlots){ //no more slots in the current block
-            block=hedaer.rblock;
+            block=header.rblock;
             slot=0;
         }else if(slotMap[slot]==SLOT_UNOCCUPIED){ //slot is free
             slot++;
@@ -482,7 +494,7 @@ int BlockAccess::project(int relId,Attribute *record){
             break;
         }
     }
-    if(block!=-1){
+    if(block==-1){
         return E_NOTFOUND;
     }
 
@@ -490,5 +502,42 @@ int BlockAccess::project(int relId,Attribute *record){
     RelCacheTable::setSearchIndex(relId,&nextRecId);
     RecBuffer recbuffer(nextRecId.block);
     recbuffer.getRecord(record,nextRecId.slot);
+    return SUCCESS;
+}
+
+//stage 10:search
+
+int BlockAccess::search(int relId, Attribute *record, char attrName[ATTR_SIZE], Attribute attrVal, int op) {
+    RecId recId;
+
+    // Get the attribute catalog entry from the attribute cache.
+    AttrCatEntry attrCatEntry;
+    int ret = AttrCacheTable::getAttrCatEntry(
+        relId, attrName, &attrCatEntry
+    );
+
+    if (ret != SUCCESS)
+        return ret;
+
+    // Check whether an index exists for this attribute.
+    if (attrCatEntry.rootBlock == -1) {
+        // No index: search using linear search.
+        recId = linearSearch(relId, attrName, attrVal, op);
+    } else {
+        // Index exists: search using the B+ tree.
+        recId = BPlusTree::bPlusSearch(relId, attrName, attrVal, op);
+    }
+
+    // Return an error if no matching record was found.
+    if (recId.block == -1 && recId.slot == -1)
+        return E_NOTFOUND;
+
+    // Read the matching record from its record block.
+    RecBuffer recBuffer(recId.block);
+    ret = recBuffer.getRecord(record, recId.slot);
+
+    if (ret != SUCCESS)
+        return ret;
+
     return SUCCESS;
 }

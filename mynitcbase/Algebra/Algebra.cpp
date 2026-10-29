@@ -2,8 +2,12 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+
+extern int totalnoofcomparison;
+
 bool isNumber(char *str); 
-int Algebra::select(char srcRel[ATTR_SIZE],char targerRel[ATTR_SIZE],char attr[ATTR_SIZE],int op,char strVal[ATTR_SIZE]){
+int Algebra::select(char srcRel[ATTR_SIZE],char targetRel[ATTR_SIZE],char attr[ATTR_SIZE],int op,char strVal[ATTR_SIZE]){
+    totalnoofcomparison = 0;
     int srcRelId=OpenRelTable::getRelId(srcRel);
     if(srcRelId==E_RELNOTOPEN){
         return E_RELNOTOPEN;
@@ -44,13 +48,13 @@ int Algebra::select(char srcRel[ATTR_SIZE],char targerRel[ATTR_SIZE],char attr[A
         return ret;
     }
     int targetRelId=OpenRelTable::openRel(targetRel);
-    if(targetRelID<0){
+    if(targetRelId<0){
         Schema::deleteRel(targetRel);
         return targetRelId;
     }
     //reset search index for the source relation and the attribute
     RelCacheTable::resetSearchIndex(srcRelId);
-    //AttrCacheTable::resetSearchIndex(srcRelId,attr);
+    AttrCacheTable::resetSearchIndex(srcRelId,attr);
     
     //search and insert the records matching
     Attribute record[src_nAttrs];
@@ -62,6 +66,7 @@ int Algebra::select(char srcRel[ATTR_SIZE],char targerRel[ATTR_SIZE],char attr[A
             return ret;
         }
     }
+    printf("total no of comparisons:%d\n",totalnoofcomparison);
     Schema::closeRel(targetRel);
     return SUCCESS;
 }
@@ -161,7 +166,7 @@ int Algebra::project(char srcRel[ATTR_SIZE],char targetRel[ATTR_SIZE]){
     return SUCCESS;
 }
 
-int Algebra::project(char srcRel[ATTR_SIZE],char targetREl[ATTR_SIZE],int tar_nAttrs,char tar_Attrs[][ATTRS_SIZE]){
+int Algebra::project(char srcRel[ATTR_SIZE],char targetRel[ATTR_SIZE],int tar_nAttrs,char tar_Attrs[][ATTR_SIZE]){
     int srcRelId=OpenRelTable::getRelId(srcRel);
     if(srcRelId==E_RELNOTOPEN){
         return E_RELNOTOPEN;
@@ -179,17 +184,17 @@ int Algebra::project(char srcRel[ATTR_SIZE],char targetREl[ATTR_SIZE],int tar_nA
     int attr_types[tar_nAttrs];
 
     //cheking whether each attribute exist
-    for(int i=0;i<tar_nAtts;i++){
+    for(int i=0;i<tar_nAttrs;i++){
         AttrCatEntry attrCatEntry;
         ret=AttrCacheTable::getAttrCatEntry(srcRelId,tar_Attrs[i],&attrCatEntry);
         if(ret!=SUCCESS){
             return E_ATTRNOTEXIST;
         }
-        attr_offsets[i]=attrCatEntry.attrOffset;
+        attr_offsets[i]=attrCatEntry.offset;
         attr_types[i]=attrCatEntry.attrType;
     }
 
-    int ret=Schema::createRel(targetRel,tar_nAttrs,tar_Attrs,attr_types);
+    ret=Schema::createRel(targetRel,tar_nAttrs,tar_Attrs,attr_types);
     if(ret!=SUCCESS){
         return ret;
     }

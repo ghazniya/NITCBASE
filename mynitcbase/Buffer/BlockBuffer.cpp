@@ -25,6 +25,18 @@ int BlockBuffer::getBlockNum() {
 
 RecBuffer::RecBuffer():BlockBuffer('R'){}
 
+IndBuffer::IndBuffer(char blockType) : BlockBuffer(blockType){}
+
+IndBuffer::IndBuffer(int blockNum) : BlockBuffer(blockNum){}
+
+IndInternal::IndInternal() : IndBuffer('I'){}
+
+IndInternal::IndInternal(int blockNum) : IndBuffer(blockNum){}
+
+IndLeaf::IndLeaf() : IndBuffer('L'){} 
+
+IndLeaf::IndLeaf(int blockNum) : IndBuffer(blockNum){}
+
 /*
  * Brings the block into the buffer if it isn't already there and hands back a
  * pointer to it. A block that was already buffered becomes the most recently
@@ -267,3 +279,82 @@ void BlockBuffer::releaseBlock(){
     StaticBuffer::blockAllocMap[this->blockNum]=UNUSED_BLK;
     this->blockNum=INVALID_BLOCKNUM;
 }
+
+//stage10::indexing
+int IndInternal::getEntry(void *ptr, int indexNum) {
+    if(indexNum < 0 || indexNum >= MAX_KEYS_INTERNAL)
+        return E_OUTOFBOUND;
+
+    unsigned char *bufferPtr;
+    int ret;
+    ret = loadBlockAndGetBufferPtr(&bufferPtr);
+    if(ret != SUCCESS)
+        return ret;
+
+    // typecast the void pointer to an internal entry pointer
+    struct InternalEntry *internalEntry = (struct InternalEntry *)ptr;
+
+    // Calculate the pointer to the entry in the buffer.
+    unsigned char *entryPtr = bufferPtr + HEADER_SIZE + (indexNum * 20);
+
+    memcpy(&(internalEntry->lChild), entryPtr, sizeof(int32_t));
+    memcpy(&(internalEntry->attrVal), entryPtr + 4, sizeof(Attribute));
+    memcpy(&(internalEntry->rChild), entryPtr + 20, 4);
+
+    return SUCCESS;
+}
+
+int IndLeaf::getEntry(void *ptr, int indexNum) {
+    if (indexNum < 0 || indexNum >= MAX_KEYS_LEAF)
+        return E_OUTOFBOUND;
+    unsigned char *bufferPtr;
+    int ret;
+    ret = loadBlockAndGetBufferPtr(&bufferPtr);
+    if (ret != SUCCESS)
+        return ret;
+
+    // Calculate the pointer to the entry in the buffer.
+    unsigned char *entryPtr = bufferPtr + HEADER_SIZE + (indexNum * LEAF_ENTRY_SIZE);
+    memcpy((struct Index *)ptr, entryPtr, LEAF_ENTRY_SIZE);
+
+    return SUCCESS;
+}
+
+//stage 11:insering and deleting index
+
+int IndInternal::setEntry(void *ptr, int indexNum) {
+  if(indexNum<0 && indexNum>=MAX_KEYS_INTERNAL){
+    return E_OUTOFBOUND;
+  }
+  unsigned char *bufferPtr;
+  int ret=loadBlockAndGetBufferPtr(&bufferPtr);
+  if(ret!=SUCCESS){
+    return ret;
+  }
+  struct InternalEntry * internalEntry=(struct InternalEntry *) ptr;
+  unsigned char *entryptr=bufferPtr+HEADER_SIZE+(indexNum*(ATTR_SIZE+4));
+  memcpy(entryptr,&(internalEntry->lChild),4);
+  memcpy(entryptr+4,&(internalEntry->attrVal),ATTR_SIZE);
+  memcpy(entryptr+4+ATTR_SIZE,&(internalEntry->rChild),4);
+  ret=StaticBuffer::setDirtyBit(blockNum);
+  if(ret!=SUCCESS) return ret;
+  return SUCCESS;
+
+}
+
+int IndLeaf::setEntry(void *ptr, int indexNum) {
+    if(indexNum<0 && indexNum>=MAX_KEYS_LEAF){
+        return E_OUTOFBOUND;
+    }
+    unsigned char *bufferPtr;
+    int ret=loadBlockAndGetBufferPtr(&bufferPtr);
+    if(ret!=SUCCESS){
+        return ret;
+    }
+    unsigned char * entryPtr= bufferPtr+HEADER_SIZE+(indexNum*LEAF_ENTRY_SIZE);
+    memcpy(entryPtr,(struct Index*)ptr,LEAF_ENTRY_SIZE);
+    ret=StaticBuffer::setDirtyBit(blockNum);
+    if(ret!=SUCCESS) return ret;
+    return SUCCESS;
+}
+
