@@ -227,3 +227,104 @@ int Algebra::project(char srcRel[ATTR_SIZE],char targetRel[ATTR_SIZE],int tar_nA
     Schema::closeRel(targetRel);
     return SUCCESS;
 }
+
+//stage12:join
+
+int Algebra::join(char srcRelation1[ATTR_SIZE],char srcRelation2[ATTR_SIZE],char targetRelation[ATTR_SIZE],char attribute1[ATTR_SIZE],char attribute2[ATTR_SIZE]){
+    int relid1=OpenRelTable::getRelId(srcRelation1);
+    int relid2=OpenRelTable::getRelId(srcRelation2);
+    if(relid1==E_RELNOTOPEN ||relid2==E_RELNOTOPEN){
+        return E_RELNOTOPEN;
+    }
+    AttrCatEntry attrCatEntry1,attrCatEntry2;
+    int ret1=AttrCacheTable::getAttrCatEntry(relid1,attribute1,&attrCatEntry1);
+    int ret2=AttrCacheTable::getAttrCatEntry(relid2,attribute2,&attrCatEntry2);
+    if(ret1==E_ATTRNOTEXIST || ret2==E_ATTRNOTEXIST) return E_ATTRNOTEXIST;
+    if(attrCatEntry1.attrType!=attrCatEntry2.attrType) return E_ATTRTYPEMISMATCH;
+    RelCatEntry relCatEntry1,relCatEntry2;
+    RelCacheTable::getRelCatEntry(relid1,&relCatEntry1);
+    RelCacheTable::getRelCatEntry(relid2,&relCatEntry2);
+    int numOfAttributes1=relCatEntry1.numAttrs;
+    int numOfAttributes2=relCatEntry2.numAttrs;
+    for(int i=0;i<numOfAttributes1;i++){
+        AttrCatEntry attr1;
+        AttrCacheTable::getAttrCatEntry(relid1,i,&attr1);
+        for(int j=0;j<numOfAttributes2;j++){
+            AttrCatEntry attr2;
+            AttrCacheTable::getAttrCatEntry(relid2,j,&attr2);
+            if(i==attrCatEntry1.offset && j==attrCatEntry2.offset){
+                continue;
+            }
+            if(strcmp(attr1.attrName,attr2.attrName)==0){
+                return E_DUPLICATEATTR;
+            }
+        }
+    }
+    
+    if(attrCatEntry2.rootBlock==-1){
+        int ret=BPlusTree::bPlusCreate(relid2,attribute2);
+        if(ret!=SUCCESS) return ret;
+    }
+    
+    int numOfAttributeInTarget=numOfAttributes1+numOfAttributes2-1;
+    char targetRelAttrNames[numOfAttributeInTarget][ATTR_SIZE];
+    int targetRelAttrTypes[numOfAttributeInTarget];
+    int targetIndex=0;
+    for(int i=0;i<numOfAttributes1;i++){
+        AttrCatEntry attrEntry;
+        AttrCacheTable::getAttrCatEntry(relid1,i,&attrEntry);
+        strcpy(targetRelAttrNames[targetIndex],attrEntry.attrName);
+        targetRelAttrTypes[targetIndex]=attrEntry.attrType;
+        targetIndex++;
+    }
+    for(int i=0;i<numOfAttributes2;i++){
+        if(i==attrCatEntry2.offset){
+            continue;
+        }
+        AttrCatEntry attrEntry;
+        AttrCacheTable::getAttrCatEntry(relid2,i,&attrEntry);
+        strcpy(targetRelAttrNames[targetIndex],attrEntry.attrName);
+        targetRelAttrTypes[targetIndex]=attrEntry.attrType;
+        targetIndex++;
+    }
+    
+    int ret=Schema::createRel(targetRelation,numOfAttributeInTarget,targetRelAttrNames,targetRelAttrTypes);
+    if(ret!=SUCCESS){
+        return ret;
+    }
+
+    int targetRelId=OpenRelTable::openRel(targetRelation);
+    if(targetRelId<0){
+        Schema::deleteRel(targetRelation);
+        return targetRelId;
+    }
+    Attribute record1[numOfAttributes1];
+    Attribute record2[numOfAttributes2];
+    Attribute targetRecord[numOfAttributeInTarget];
+
+    RelCacheTable::resetSearchIndex(relid1);
+    while(BlockAccess::project(relid1,record1)==SUCCESS){
+
+        RelCacheTable::resetSearchIndex(relid2);
+        AttrCacheTable::resetSearchIndex(relid2,attribute2);
+        while(BlockAccess::search(relid2,record2,attribute2,record1[attrCatEntry1.offset],EQ)==SUCCESS){
+            int k=0;
+            for(int i=0;i<numOfAttributes1;i++){
+                targetRecord[k++]=record1[i];
+            }
+            for(int i=0;i<numOfAttributes2;i++){
+                if(i==attrCatEntry2.offset) continue;
+                targetRecord[k++]=record2[i];
+            }
+            ret=BlockAccess::insert(targetRelId,targetRecord);
+            if(ret!=SUCCESS){
+                OpenRelTable::closeRel(targetRelId);
+                Schema::deleteRel(targetRelation);
+                return E_DISKFULL;
+            }
+        }
+    }
+    OpenRelTable::closeRel(targetRelId);
+    return SUCCESS;
+
+}

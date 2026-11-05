@@ -1,7 +1,7 @@
 #include "Schema.h"
 #include <cmath>
 #include <cstring>
-
+#include <cstdio>
 int Schema::openRel(char relName[ATTR_SIZE]){
     int rel=OpenRelTable::openRel(relName);
     if(rel>=0){
@@ -82,7 +82,6 @@ int Schema::createRel(char relName[],int nAttrs,char attrs[][ATTR_SIZE],int attr
     if(retVal!=SUCCESS){
         return retVal;
     }
-
     for(int i=0;i<nAttrs;i++){
         Attribute attrCatRecord[ATTRCAT_NO_ATTRS];
         strcpy(attrCatRecord[ATTRCAT_REL_NAME_INDEX].sVal,relName);

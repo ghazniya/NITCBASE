@@ -175,10 +175,13 @@ int BlockBuffer::setHeader(struct HeadInfo * head){
         return ret;
     }
     struct HeadInfo *bufferHeader=(struct HeadInfo *)bufferPtr;
+    bufferHeader->blockType = head->blockType;
+    bufferHeader->pblock= head->pblock;
     bufferHeader->numSlots=head->numSlots;
     bufferHeader->numAttrs=head->numAttrs;
     bufferHeader->rblock=head->rblock;
     bufferHeader->lblock=head->lblock;
+    bufferHeader->numEntries=head->numEntries;
     ret=StaticBuffer::setDirtyBit(blockNum);
     if(ret!=SUCCESS){
         return ret;

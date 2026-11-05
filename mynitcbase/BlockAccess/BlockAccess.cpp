@@ -304,12 +304,17 @@ int BlockAccess::insert(int relId,Attribute *record){
         return ret;
 
     /* B+ Tree Insertions */
+    if (relId == RELCAT_RELID || relId == ATTRCAT_RELID) {
+    return SUCCESS;
+}
     int flag = SUCCESS;
 
     for (int attrOffset = 0; attrOffset < numOfAttributes; attrOffset++) {
         AttrCatEntry attrCatEntry;
-        AttrCacheTable::getAttrCatEntry(relId, attrOffset, &attrCatEntry);
-
+        int retVal=AttrCacheTable::getAttrCatEntry(relId, attrOffset, &attrCatEntry);
+        if(retVal != SUCCESS) {
+        return retVal;
+    }
         int rootBlock = attrCatEntry.rootBlock;
 
         // index exists on this attribute
@@ -320,6 +325,8 @@ int BlockAccess::insert(int relId,Attribute *record){
             if (retVal == E_DISKFULL) {
                 // the index on this attribute has been destroyed
                 flag = E_INDEX_BLOCKS_RELEASED;
+            }else if(retVal!=SUCCESS){
+                return retVal;
             }
         }
     }

@@ -115,11 +115,6 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], Attribute attr
 
             ++index;
         }
-
-        if (op != NE) {
-            break;
-        }
-
         // Continue through linked leaves for NE searches.
         block = leafHead.rblock;
         index = 0;
